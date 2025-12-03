@@ -1,42 +1,353 @@
-Project README
+# Building Damage Grade Classification — Detailed README
 
-Overview
-This repository contains code and artifacts for earthquake damage-grade prediction. The project is arranged to make core scripts easy to run and to keep trained models and data organized.
+**最后更新：2025-12-02**
 
-Top-level layout (important)
-- `src/`    : Core runnable scripts for training, evaluation, and submission
-- `models/` : Saved model checkpoints (.pth files)
-- `tools/`  : Utility scripts (checkpoint checks, evaluation helpers)
-- `data/`   : Dataset files (`train.csv`, `test.csv`, `submission.csv`)
+## 一、项目概览
+本仓库用于建筑物损伤等级（damage_grade，三分类）预测。目标以 weighted F1 为核心评价指标，工作包含数据预处理、特征工程、单模型训练（HGB 与 NN）、超参搜索、融合与后处理、以及结果诊断与提交流程。
 
-Core scripts (located in `src/`)
-- `src\hgb_focused_solution.py`   — Generate final submission (recommended)
-- `src\train_fast.py`             — Fast HGB training (5-fold)
-- `src\deep_diagnosis.py`         — Diagnostic analysis (per-fold, per-class)
-- `src\net_optimized_edition.py`  — Optimized neural network training
-- `src\quick_ensemble.py`         — Quick ensemble script for validation
+本文档目标：
+- 汇总当前最佳实践与最终方案（HGB 5 折集成 + Class3 后处理）
+- 给出可复现的训练/推理步骤
+- 说明每个脚本的关键可配置参数与默认值，便于快速调试
 
-Quick start (PowerShell)
-Generate the final submission (writes `data/submission.csv`):
+## 二、目录与关键文件（快速索引）
+- `src/`    : 核心脚本（训练、评估、推理、融合）
+- `models/` : 模型检查点（`best_model_fold_*.pth`）
+- `tools/`  : 工具脚本（评估/检查点/可视化）
+- `data/`   : 数据文件（`train.csv`, `test.csv`, `submission.csv`）
+
+主要脚本：
+- `src/hgb_focused_solution.py` — HGB 5 折 + 后处理，一键生成提交
+- `src/train_fast.py` — 快速训练（NN 示例/管道）
+- `src/net_optimized_edition.py` — NN 训练流水线（mixup/EMA/FocalLoss）
+- `src/quick_ensemble.py` — NN+HGB 加权融合示例
+- `src/deep_diagnosis.py` — 性能诊断与置信度分析
+
+## 三、快速开始（PowerShell）
+1. 切换到项目目录：
 ```powershell
 cd "C:\Users\simpe\OneDrive\MCS\412 Data Mining\Project"
+```
+2. 生成最终提交（HGB 主导方案，最快）：
+```powershell
 python src\hgb_focused_solution.py
 ```
-
-Run diagnostic analysis (outputs reports / confusion matrices):
+3. 运行诊断分析：
 ```powershell
 python src\deep_diagnosis.py
 ```
-
-Train from scratch (optional, time-consuming):
+4. 从头训练（NN，耗时）：
 ```powershell
 python src\net_optimized_edition.py
-python src\train_fast.py
 ```
 
-Models and data
-- Checkpoints: `models/best_model_fold_0.pth` … `models/best_model_fold_4.pth`
-- Submission: `data/submission.csv` (format: `building_id,damage_grade`)
+## 四、数据与预处理要点
+- 合并 `train.csv` 与 `test.csv` 做统一类别编码，避免训练/测试编码不一致
+- 数值特征：建议使用 `StandardScaler`（NN），树模型可不缩放
+- 缺失值：数值用中位数或指示器填充；类别用 `"missing"` 或众数
+- 分层 CV：`StratifiedKFold(n_splits=5, shuffle=True, random_state=42)`
+
+## 五、模型与训练细节（要点）
+
+### HGB（HistGradientBoosting）
+- 建议配置：`max_iter=300-500`, `learning_rate=0.03-0.1`, `max_leaf_nodes` 视情况设置
+- 优点：训练快、稳定、概率质量好
+
+### 神经网络（FinalNet / ImprovedNet）
+- 架构要点：输入 → 512 → 256 → 128 → 64 → 输出（3）
+- 每层 BatchNorm + GELU + Dropout（0.4→0.3→0.3→0.2）
+- 训练技巧：mixup、FocalLoss / class weights、EMA、AdamW、Cosine LR
+
+## 六、融合与后处理
+- 融合：加权平均（NN/HGB）、stacking（OOF 概率作为元特征）
+- 关键后处理：对 Class3 概率应用放大因子（例如 1.5x–2.5x），再归一化
+- 概率校准：温度缩放或 Platt/isotonic 校准（如需更精确概率）
+
+## 七、评估指标与诊断
+- 主要指标：weighted F1（主要）、per-class precision/recall/f1
+- 诊断脚本：`src/deep_diagnosis.py`（每折混淆矩阵、置信度、模型对比）
+
+## 八、脚本参数说明表（快速参考）
+下面列出 `src/` 下关键脚本的主要可配置参数、默认值与代码位置，便于你快速定位与修改。
+
+### `src/train_fast.py`
+| 参数 | 默认值 | 说明 | 代码位置 |
+|---|---:|---|---|
+| random seed | 42 | 随机种子，影响复现 | `set_seed(seed=42)` 函数调用处 |
+| device | 自动检测 | CUDA/CPU 自动选择 | `device = torch.device(...)` |
+| batch size | 32 | 训练小批量大小（在循环中硬编码） | `for i in range(0, len(X_tr), 32)` |
+| lr | 1e-2 | AdamW 初始学习率 | `optimizer = torch.optim.AdamW(..., lr=1e-2)` |
+| weight_decay | 1e-4 | AdamW 权重衰减 | 同上 |
+| scheduler | CosineAnnealingWarmRestarts(T_0=15, T_mult=2) | LR 调度 | `scheduler = ...` |
+| epochs | 100 | 最大训练轮数 | `for epoch in range(100):` |
+| validate freq | 每 10 epoch | 验证频率（当前实现） | `if (epoch+1)%10 == 0:` |
+| patience | 20 | 早停容忍 | `patience = 20` |
+| class_weights tweak | cw[1] *= 2.0 | 手动放大 class 2 权重（可删改） | class_weights 计算后直接修改 |
+
+### `src/hgb_focused_solution.py`
+| 参数 | 默认值 | 说明 | 代码位置 |
+|---|---:|---|---|
+| n_splits | 5 | StratifiedKFold 折数 | `StratifiedKFold(n_splits=5, ...)` |
+| HGB max_iter | 500 | HGB 迭代次数 | `HistGradientBoostingClassifier(max_iter=500, ...)` |
+| HGB learning_rate | 0.08 | 学习率 | 同上 |
+| HGB max_leaf_nodes | 50 | 控制模型容量 | 同上 |
+| l2_regularization | 0.01 | L2 正则化 | 同上 |
+| max_bins | 300 | 分箱数 | 同上 |
+| class boosts | C1=0.9, C2=1.0, C3=2.5 | 三类概率放大因子（调整以控制召回） | 在 `boosted_probs[:, i] *= factor` 处 |
+| submission path | `data/submission.csv` | 输出文件路径 | `submission.to_csv(...)` |
+
+### `src/net_optimized_edition.py`
+| 参数 | 默认值 | 说明 | 代码位置 |
+|---|---:|---|---|
+| seed | 42 | 随机种子 | `set_seed(42)` |
+| batch_size (train) | 64 | 训练时 batch 大小 | `DataLoader(..., batch_size=64)` |
+| batch_size (val) | 256 | 验证时 batch 大小 | `DataLoader(..., batch_size=256)` |
+| optimizer lr | 1e-2 | AdamW 初始 lr | `torch.optim.AdamW(..., lr=1e-2)` |
+| weight_decay | 1e-4 | 权重衰减 | 同上 |
+| epochs | 120 | 最大训练轮数 | `epochs = 120` |
+| scheduler | CosineAnnealingWarmRestarts(T_0=20, T_mult=2, eta_min=1e-5) | LR 策略 | `scheduler = ...` |
+| criterion | FocalLoss(alpha=class_weights, gamma=2.0) | 处理类别不平衡 | `criterion = FocalLoss(...)` |
+| mixup alpha | 0.3 | Mixup 强度 | `mixup_batch(..., alpha=0.3)` |
+| EMA decay | 0.999 | EMA 衰减 | `EMA(model, decay=0.999)` |
+| clip_grad_norm | 1.0 | 梯度裁剪阈值 | `clip_grad_norm_(..., max_norm=1.0)` |
+| sampler | WeightedRandomSampler | 通过样本权重上采样 | `create_sampler(y_train)` |
+| patience | 25 | 早停容忍 | `patience = 25` |
+
+### `src/quick_ensemble.py`
+| 参数 | 默认值 | 说明 | 代码位置 |
+|---|---:|---|---|
+| NN weight | 0.65 | 融合时 NN 概率权重 | `final_probs = 0.65 * nn_probs + 0.35 * hgb_probs` |
+| HGB weight | 0.35 | 融合时 HGB 权重 | 同上 |
+| HGB params | max_iter=300, lr=0.1, l2=0.1 | 在 ensemble 中训练 HGB 的设置 | `HistGradientBoostingClassifier(...)` |
+| model filenames | `best_model_fold_{fold}.pth` | 期望的 NN checkpoint 名称 | `load_existing_models` 检查处 |
+| test batch size | 512 | 推理时 batch | `DataLoader(..., batch_size=512)` |
+
+### `src/deep_diagnosis.py`
+| 参数 | 默认值 | 说明 | 代码位置 |
+|---|---:|---|---|
+| n_splits | 5 | CV 折数用于诊断 | `StratifiedKFold(n_splits=5, ...)` |
+| HGB params | max_iter=350, lr=0.09 | 诊断时与 NN 对比用的 HGB 设置 | `HistGradientBoostingClassifier(...)` |
+| 输出方式 | 控制台打印 & DataFrame | 输出混淆矩阵、per-class 指标、fold 汇总 | 打印与 `metrics_df` 部分 |
+
+---
+
+## 九、可选改进（我可以替你实现）
+- 将上述脚本统一改为支持 `argparse` 命令行参数，以便在 CI/实验中直接传参
+- 将超参集中到 `config.yaml` 并在脚本中加载，便于版本化管理
+- 在 README 中加入每个脚本的示例命令（含常用参数组合）
+
+如果你同意，我可以把 `train_fast.py` 和 `net_optimized_edition.py` 改为支持命令行参数（示例：`--lr`, `--batch-size`, `--epochs`, `--out-dir`），并把示例命令加入 README。
+
+---
+
+**结束** — 已将 README 扩展为更全面的说明并加入脚本参数表。若需要我现在把两到三个关键脚本改为接受命令行参数，请回复 “改 arg” 或指定具体脚本。
+
+## 附：每个优化的超参数与网络结构（详细）
+下面给出在本项目中使用/测试的主要模型配置与网络结构细节，包含具体超参数数值与训练设置，方便复现或微调。
+
+### A. HGB 模型配置（各脚本）
+- `src/hgb_focused_solution.py`（最终方案中的 HGB）
+  - `max_iter`: 500
+  - `learning_rate`: 0.08
+  - `max_leaf_nodes`: 50
+  - `l2_regularization`: 0.01
+  - `max_bins`: 300
+  - CV: StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
+  - 后处理: class boosts = [0.9, 1.0, 2.5]（C1,C2,C3），随后重新归一化
+
+- `src/quick_ensemble.py`（ensemble 中训练的 HGB）
+  - `max_iter`: 300
+  - `learning_rate`: 0.10
+  - `l2_regularization`: 0.10
+  - 用途：在 ensemble 中快速训练一份 HGB 作为与 NN 加权融合的基线
+
+- `src/deep_diagnosis.py`（对比用 HGB）
+  - `max_iter`: 350
+  - `learning_rate`: 0.09
+
+> 说明：若需改变 HGB 超参数，修改对应脚本中 `HistGradientBoostingClassifier(...)` 的参数即可，或将参数暴露为命令行/配置项以便批量搜索。
+
+---
+
+### B. 神经网络结构与训练超参数
+下面列出项目中出现的主要网络实现（文件、类名与结构），并给出训练时的关键超参数。
+
+1) `OptimizedNet`（`src/train_fast.py` 与 `src/hgb_focused_solution.py` 的实现变体）
+   - 结构（顺序）：BatchNorm(input) → Linear(input,512) → BN(512) → GELU → Dropout(0.5) → Linear(512,256) → BN(256) → GELU → Dropout(0.4) → Linear(256,128) → BN(128) → GELU → Dropout(0.3) → Linear(128,64) → GELU → Dropout(0.2) → Linear(64,3)
+   - 损失：CrossEntropyLoss（train_fast 中使用 class weights，并对 class 2 做了人工放大 cw[1]*=2.0，可删）
+   - 优化器：AdamW(lr=1e-2, weight_decay=1e-4)
+   - Scheduler：CosineAnnealingWarmRestarts(T_0=15, T_mult=2)
+   - 批量/轮数：batch_size=32（train_fast），epochs up to 100，validate 每 10 epoch
+   - 早停：patience=20
+
+2) `ImprovedNet`（`src/net_optimized_edition.py` 中的实现）
+   - 结构（模块化）：
+     - layer1: Linear(input,512) → BatchNorm1d(512) → GELU → Dropout(0.4)
+     - layer2: Linear(512,256) → BatchNorm1d(256) → GELU → Dropout(0.3)
+     - layer3: Linear(256,128) → BatchNorm1d(128) → GELU → Dropout(0.3)
+     - layer4: Linear(128,64) → BatchNorm1d(64) → GELU → Dropout(0.2)
+     - head: Linear(64,3)
+   - 训练细节（默认）：
+     - 损失：FocalLoss(alpha=class_weights, gamma=2.0)
+     - 优化器：AdamW(lr=1e-2, weight_decay=1e-4)
+     - Scheduler：CosineAnnealingWarmRestarts(T_0=20, T_mult=2, eta_min=1e-5)
+     - Mixup：alpha=0.3（每个 batch 使用 mixup_batch）
+     - EMA：decay=0.999，训练过程中维护 EMA 权重
+     - 批量：train batch_size=64，val batch_size=256
+     - epochs：最多 120，早停 patience=25
+     - 采样器：WeightedRandomSampler（按类别频率上采样以平衡）
+
+3) `WideNet`（`src/quick_ensemble.py` 中用于加载 checkpoint 的网络）
+   - 类似于 OptimizedNet，带有命名 dropout 层（dropouts: 0.5, 0.4, 0.3, 0.2）
+   - 用于加载 `best_model_fold_{i}.pth` 并推理出 NN 概率
+
+4) `FinalNet`（项目中示例/最终实现，参见 `src/net_final_v2.py`，如未存在请参考此定义）
+   - 架构要点：Linear(input,512) → BN → GELU → Linear(512,256)+res_proj(512→256) → BN → GELU → Dropout → Linear(256,128) → BN → GELU → Dropout → Linear(128,64) → BN → GELU → Dropout → head Linear(64, num_classes)
+   - 权重初始化：Xavier（xavier_uniform_）
+   - 训练建议：AdamW lr=1e-3（或 1e-2 视实验），mixup alpha≈0.2，label_smoothing≈0.05，FocalLoss 可选
+
+---
+
+### C. 融合与训练超参摘要（常用默认值）
+- 融合权重（`quick_ensemble.py`）：NN 0.65 / HGB 0.35
+- HGB 后处理（`hgb_focused_solution.py`）：class boosts = [0.9, 1.0, 2.5]
+- 常用训练批次与轮数：NN train batch 64、epochs 80–120；HGB 单次训练即完成
+- 优化器/正则：AdamW（lr 1e-2 或 1e-3）+ weight_decay 1e-4；gradient clip norm=1.0（在 net_optimized_edition 中使用）
+
+---
+
+如果你愿意，我可以：
+- 把以上默认超参数提取到 `config.yaml` 并让脚本从中读取；或
+- 将 `net_optimized_edition.py` 和 `train_fast.py` 改为支持 `argparse`（推荐，以便命令行传参与实验自动化）。
+
+请告诉我你想先做哪项（例如：“改 config.yaml” 或 “为 net_optimized_edition 改 argparse”）。
+
+# Building Damage Grade Classification — Detailed README
+
+最后更新：2025-12-02
+
+## 一、项目概览
+本仓库用于建筑物损伤等级（damage_grade，三分类）预测。目标以 weighted F1 为核心评价指标，工作包含数据预处理、特征工程、单模型训练（HGB 与 NN）、超参搜索、融合与后处理、以及结果诊断与提交流程。
+
+## 二、目录与关键文件
+- `src/`    : 核心脚本（训练、评估、推理、融合）
+- `models/` : 模型检查点（`best_model_fold_*.pth`）
+- `tools/`  : 工具脚本（评估/检查点/可视化）
+- `data/`   : 数据文件（`train.csv`, `test.csv`, `submission.csv`）
+- `README.md`: 本文档（详细说明）
+
+主要脚本快速索引：
+- `src/hgb_focused_solution.py` — HGB 5 折 + 后处理，一键生成 `data/submission.csv`（推荐用于提交）
+- `src/train_fast.py` — HGB 训练流水线（用于 CV）
+- `src/deep_diagnosis.py` — 诊断脚本（混淆矩阵、per-class 指标、误分类样本）
+- `src/net_final_v2.py` — NN 模型定义（FinalNet）
+- `src/net_optimized_edition.py` — NN 训练流程（mixup、EMA、FocalLoss 可选）
+- `src/quick_ensemble.py`, `src/stack_ensemble.py` — 融合与元学习脚本
+
+## 三、运行环境与依赖
+- 建议 Python 版本：3.9–3.11
+- 建议依赖（示例）：
+```powershell
+pip install -r requirements.txt
+# 若没有 requirements.txt，至少安装：
+pip install pandas numpy scikit-learn torch torchvision optuna matplotlib seaborn
+```
+
+## 四、数据预处理（详细流程）
+1. 统一编码：将 `train.csv` 与 `test.csv` 合并后对类别特征统一 Label Encoding / Ordinal Encoding，保证训练/测试一致性。避免单独对 train 编码带来的泄露。 
+2. 缺失值处理：
+   - 对数值型：按列中位数或使用带指示器的填充（若缺失具有含义）
+   - 对类别型：填充特殊类别 `"missing"` 或频率最高项
+3. 异常值处理：对明显异常的数值特征做 winsorization 或按上下限截断
+4. 特征缩放：对 NN 使用 `StandardScaler`（fit 在训练集上），对树模型可不做缩放
+5. 分层划分：使用 `StratifiedKFold(n_splits=5, shuffle=True, random_state=42)` 做 CV 分割
+
+## 五、特征工程（建议与已实现项）
+- 原始特征保留与清洗（如建筑面积、楼层数、材质编码等）
+- 构造交互特征：数值相除/乘/比值、类别组合（频率编码 / target encoding）
+- 聚合特征：若存在分组（例如地区、社区），做 groupby 聚合（均值、方差、计数）
+- 统计特征：缺失率、非零计数、特征分布偏度/峰度等
+- 特征选择：基于树模型的特征重要性筛选、互信息或逐步删除法
+
+实现提示：把 feature pipeline 独立为 `src/features.py`（建议做法），方便在 NN 与 HGB 之间共享特征处理逻辑。
+
+## 六、模型实现与训练细节
+
+### 6.1 HistGradientBoosting (HGB) — 主力模型
+- 配置建议：`max_iter=300-1000`, `learning_rate=0.03-0.1`, `max_leaf_nodes` 或 `max_depth` 视特征维度调整
+- 训练要点：使用 early_stopping（自动）并保存每折最优模型（按 val weighted F1）
+- 输出：保存每折概率并对测试取平均（oof 概率用于融合/stacking）
+
+### 6.2 Neural Network (FinalNet) — 表格 MLP（`src/net_final_v2.py`）
+- 架构：input → 512 → 256 → 128 → 64 → output（3 classes），GELU 激活，每层 BatchNorm + Dropout
+- 残差：512→256 间加入线性投影残差以稳定训练
+- 权重初始化：Xavier（`xavier_uniform_`）
+
+训练细节（NN）：
+- 损失：`CrossEntropyLoss(weight=class_weights)` 或 `FocalLoss(gamma=2.0)`；可加 label_smoothing
+- 优化器：`AdamW`，初始 lr=1e-3（建议与 OneCycle 或 CosineAnnealing 调度结合）
+- 正则：Dropout、weight decay（1e-5–1e-3）、mixup(alpha≈0.2)、EMA 权重
+- 批次与轮数：batch_size=64–256（受内存限制），epochs=50–120，early-stop（patience≈15）
+- 保存：每折保存最优 checkpoint（按 val weighted F1），并导出 val logits 与 test logits
+
+### 6.3 训练流程（推荐）
+1. 先用 `train_fast.py` 训练 HGB 快速基线并获取 oof_probabilities
+2. 在 subset 上调试 NN（确保 pipeline 无错误）
+3. 在全部数据上做 5 折 NN 训练，保存每折 checkpoint 与 oof
+4. 在验证上做融合权重网格搜索（NN/HGB 权重 + Class3 boost）
+
+## 七、超参数搜索与调度
+- 工具：建议使用 `Optuna` 做高效搜索（可并行）
+- 搜索目标：val weighted F1（最重要），其次监控 per-class recall（尤其 Class3）
+- 搜索示例：搜索 HGB 的 `learning_rate, max_iter, max_leaf_nodes`，NN 的 `lr, weight_decay, dropout_rates, hidden_dims` 
+
+示例 Optuna 配置（伪代码）:
+```python
+def objective(trial):
+  lr = trial.suggest_loguniform('lr', 1e-5, 1e-2)
+  wd = trial.suggest_loguniform('wd', 1e-6, 1e-2)
+  # 训练并返回 val weighted F1
+```
+
+## 八、融合（Ensembling）与后处理
+- 融合策略：简单加权平均、stacking（使用 oof 概率训练元模型如 LogisticRegression）、rank fusion
+- 后处理（关键）：Class3 概率放大（例如 ×1.5–2.0）并重新归一化以提升少数类召回；在验证集上网格搜索放大因子并选择最稳健值
+- 校准：可使用温度缩放（temperature scaling）或 isotonic/Platt 校准修正模型概率
+
+## 九、评估与诊断
+- 主要指标：weighted F1、per-class F1、precision、recall
+- 诊断脚本：`src/deep_diagnosis.py`（输出每折混淆矩阵、误分类样本）
+- 可视化：训练/验证曲线、特征重要性图、混淆矩阵热图
+
+## 十、复现（步骤）
+1. 准备环境并安装依赖
+2. 将 `data/` 放在项目根（包含 `train.csv`, `test.csv`）
+3. 运行 HGB 基线：
+```powershell
+python src\train_fast.py
+```
+4. 可选：训练 NN（先小规模调试，再全量训练）：
+```powershell
+python src\net_optimized_edition.py
+```
+5. 运行融合与生成提交：
+```powershell
+python src\hgb_focused_solution.py
+```
+
+## 十一、调试与常见问题
+- 提交文件格式错误：确保 `data/submission.csv` 无索引列，列名为 `building_id,damage_grade`
+- F1 在本地高但提交低：检查数据泄露、特征编码不一致、或测试分布偏移；逐项回溯 OOF 与 test 概率分布
+- NN 训练不收敛：先在小样本上使用较大学习率与更强正则调试，确认数据 pipeline 正确
+
+## 十二、扩展实验建议（未来工作）
+- 尝试更多表格深度模型（TabNet、FT-Transformer）
+- 基于 stacking 的多级融合（多模型 + 时间/地点分组元学习）
+- 使用更细粒度的类别校准或代价敏感学习以提升 Class3 召回
+
+---
+如需我把 README 转为 PDF、或把部分命令改成 Linux/bash 版本，或按你希望的格式再细化（例如把每个脚本的参数写成表格），告诉我我会继续处理。
+
 
 
 
