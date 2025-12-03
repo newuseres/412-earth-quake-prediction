@@ -10,6 +10,7 @@ This repository contains code for predicting building damage grades (three class
 - Models: checkpoints stored in `models/` (e.g. `best_model_fold_0.pth`)
 - Code: training/inference/ensemble scripts in `src/`
 - Utilities: small helper scripts in `tools/`
+- 412project.ipynb: Our baseline codes
 
 2) Quick start (PowerShell)
 
@@ -50,6 +51,7 @@ python tools\check_checkpoint.py
 - `src/net_optimized_edition.py` — Full neural network training pipeline (mixup, EMA, focal loss options). Use for deeper NN experiments.
 - `src/quick_ensemble.py` — Load NN checkpoints (if present) and combine NN + HGB probabilities via simple weighted average to produce a submission.
 - `src/deep_diagnosis.py` — Produce per-fold/per-class metrics and confusion matrices to help debugging and model analysis.
+- `412project.ipynb` — Our baseline codes, including data preprocessing, model training, and evaluation of 4 baseline models.
 
 4) Tools
 
