@@ -82,253 +82,59 @@ data/submission.csv
 best_model_fold_0.pth  (784 KB) - Fold 0 NN 模型
 best_model_fold_1.pth  (784 KB) - Fold 1 NN 模型
 best_model_fold_2.pth  (784 KB) - Fold 2 NN 模型
-best_model_fold_3.pth  (784 KB) - Fold 3 NN 模型
-best_model_fold_4.pth  (784 KB) - Fold 4 NN 模型
-───────────────────────────────
-总计: 3.8 MB (5折NN模型)
+# 📑 项目文件索引（精简版）
+
+本文件为项目的快速索引，保留常用文档、核心脚本、提交文件与快速运行命令。已将实验/历史脚本移至 `experiments/`。
+
+## 快速链接
+
+- `docs/` — 项目文档（README、方法说明、快速参考等）
+- `src/` — 核心可运行脚本（推荐保留用于部署/复现）
+- `experiments/` — 历史/实验脚本与日志（可删除或长期保留）
+- `models/` — 模型检查点（`.pth` 文件）
+- `tools/` — 小工具脚本（检查点、评估等）
+- `data/` — 数据文件（train/test/submission）
+
+## 当前核心脚本（位于 `src/`）
+
+- `hgb_focused_solution.py`  — 一键生成最终提交（推荐）
+- `train_fast.py`            — 快速训练 HGB（5 折）
+- `deep_diagnosis.py`       — 性能诊断（每折/每类分析）
+- `net_optimized_edition.py` — 优化后的神经网络训练脚本
+- `quick_ensemble.py`       — 基础集成脚本（快速验证）
+
+## 实验脚本（已移动到 `experiments/`）
+
+- 包含：`advanced_optimization.py`, `aggressive_fix.py`, `ensemble_final.py`, `final_ensemble.py`, `stack_ensemble.py`, `net_super_optimized.py`, `net_final_v2.py`, `train_all_folds.py`, `validate_models.py`, `output.log`, 等历史/试验脚本。
+
+## 提交文件
+
+- `data/submission.csv` — 最终预测（1000 行），格式：`building_id,damage_grade`。
+
+## 常用命令（示例）
+
+生成最终提交（推荐）
+```powershell
+python src\hgb_focused_solution.py
 ```
 
-### 使用方法
-```python
-import torch
-
-# 加载模型
-model = torch.load('best_model_fold_0.pth')
-model.eval()
-
-# 推理
-with torch.no_grad():
-    output = model(test_tensor)
-    predictions = output.argmax(dim=1)
+运行诊断分析
+```powershell
+python src\deep_diagnosis.py
 ```
+
+从头训练（可选）
+```powershell
+python src\net_optimized_edition.py
+python src\train_fast.py
+python src\hgb_focused_solution.py
+```
+
+## 如果需要我可以：
+
+- 更新 `README.md` / `INDEX.md` 中的路径引用
+- 将 `experiments/` 中不必要的文件移到 `backup/` 或删除（需你确认）
 
 ---
 
-## 数据集 (DATASETS) 📊
-
-### 数据文件
-```
-data/
-├── train.csv          (未显示) - 训练集 4000 样本
-│   └─ 列: 建筑特征 + damage_grade (1-3)
-├── test.csv           (未显示) - 测试集 1000 样本
-│   └─ 列: 建筑特征 (无标签)
-└── submission.csv     (6.8 KB) - 最终预测 ✅
-    └─ 列: building_id (0-999), damage_grade (1-3)
-```
-
-### 数据统计
-| 数据集 | 样本数 | 特征数 | Class 1 | Class 2 | Class 3 |
-|--------|--------|--------|---------|---------|---------|
-| train.csv | 4000 | 多个 | 18.2% | 49.2% | 32.6% |
-| test.csv | 1000 | 多个 | ? | ? | ? |
-| submission.csv | 1000 | 1 | 14.1% | 25.3% | 60.6% |
-
----
-
-## 快速使用指南 (QUICK START)
-
-### 场景 1: 只想生成提交文件 ⚡
-```bash
-python hgb_focused_solution.py
-# 输出: data/submission.csv ✓
-```
-
-### 场景 2: 诊断性能问题 🔬
-```bash
-python deep_diagnosis.py
-# 输出: 每折每类准确率、混淆矩阵、F1 分析
-```
-
-### 场景 3: 从头训练模型 🚀
-```bash
-# 第1步: 训练 5 折 NN 模型
-python net_optimized_edition.py
-
-# 第2步: 训练 5 折 HGB 模型
-python train_fast.py
-
-# 第3步: 生成提交
-python hgb_focused_solution.py
-```
-
-### 场景 4: 测试不同策略 🧪
-```bash
-# 测试 NN vs HGB vs 组合
-python fix_performance_drop.py
-
-# 测试 7 种不同策略
-python final_ensemble.py
-
-# 测试堆叠集成
-python advanced_optimization.py
-```
-
-### 场景 5: 快速调整参数 🔧
-编辑 `hgb_focused_solution.py` 中的这一行:
-```python
-boosted[:, 2] *= 2.0  # 改为 1.5 或 2.5
-```
-
----
-
-## 文件流程图 (WORKFLOW)
-
-```
-📥 输入数据
-├─ data/train.csv (4000样本)
-└─ data/test.csv (1000样本)
-   │
-   ↓
-🤖 模型训练 (选择其一)
-├─ net_optimized_edition.py → 5折NN
-├─ train_fast.py → 5折HGB
-└─ 两者都训练 → 融合
-   │
-   ↓
-📊 诊断分析 (可选)
-├─ deep_diagnosis.py → 性能分析
-├─ fix_performance_drop.py → 策略对比
-└─ final_ensemble.py → 多策略测试
-   │
-   ↓
-🎯 最终方案
-├─ hgb_focused_solution.py → HGB + Class 3 Boost
-└─ quick_ensemble.py → 基础 HGB 集成
-   │
-   ↓
-📤 输出
-└─ data/submission.csv (1000预测) ✅
-```
-
----
-
-## 文档导航 (DOCUMENTATION MAP)
-
-### 如果你想...
-
-#### 📖 了解项目概况
-→ 阅读 **[README.md](README.md)** (完整且详细)
-
-#### ⚡ 快速了解核心方案
-→ 阅读 **[QUICK_REFERENCE.md](QUICK_REFERENCE.md)** (3分钟快读)
-
-#### 🔧 调整参数或故障排查
-→ 阅读 **[NEXT_STEPS_中文.md](NEXT_STEPS_中文.md)** (动手指南)
-
-#### 🎓 学习详细技术细节
-→ 阅读 **[FINAL_SUMMARY_中文.md](FINAL_SUMMARY_中文.md)** (技术总结)
-
-#### 💻 直接运行代码
-→ 使用 **[hgb_focused_solution.py](hgb_focused_solution.py)** (一键生成)
-
-#### 🔬 诊断问题
-→ 运行 **[deep_diagnosis.py](deep_diagnosis.py)** (性能分析)
-
-#### 📚 查看所有文件
-→ 参考本文件 **[INDEX.md](INDEX.md)** (你正在阅读)
-
----
-
-## 性能总结 (PERFORMANCE SUMMARY)
-
-### 性能进展
-```
-阶段 1: 基线           F1 = 0.1942
-阶段 2: NN优化         F1 = 0.4679  (+141%)
-阶段 3: HGB            F1 = 0.5197  (+11% vs NN)
-阶段 4: HGB + Boost    F1 = 0.52-0.55 (+3-5% vs HGB) ✓
-─────────────────────────────────────────
-总体改进              F1 = 0.1942 → 0.52-0.55 (+180-200%)
-```
-
-### 关键指标
-| 指标 | 值 | 说明 |
-|------|-----|------|
-| 初始 F1 | 0.1942 | 基线 |
-| 最终 F1 | 0.52-0.55 | 预期 |
-| Class 3 检测 | 45-55% | 从 4-42% 提升 |
-| 改进倍数 | 2.8x | 相对改进 |
-| 改进百分比 | +180% | 绝对改进 |
-
----
-
-## 常见问题 (FAQ)
-
-### Q: 我应该先读什么？
-A: **[README.md](README.md)** - 完整项目说明，包含所有必要信息
-
-### Q: 我想快速了解方案？
-A: **[QUICK_REFERENCE.md](QUICK_REFERENCE.md)** - 3分钟速览
-
-### Q: 我想生成提交文件？
-A: 运行 `python hgb_focused_solution.py` - 一键完成
-
-### Q: 提交后 F1 不理想怎么办？
-A: 阅读 **[NEXT_STEPS_中文.md](NEXT_STEPS_中文.md)** - 快速调整指南
-
-### Q: 我想从头训练模型？
-A: 运行 `python net_optimized_edition.py` 和 `python train_fast.py`
-
-### Q: 我想诊断性能问题？
-A: 运行 `python deep_diagnosis.py` - 详细的性能分析
-
-### Q: 有哪些备选方案？
-A: 查看本文件中的 **集成与优化脚本** 部分 - 15+ 个实验脚本可选
-
----
-
-## 文件维护信息 (MAINTENANCE)
-
-### 最后更新
-- 日期: 2025年12月2日
-- 项目状态: ✅ 完成
-- 提交状态: ✅ 已准备
-
-### 核心文件大小
-| 文件 | 大小 | 说明 |
-|------|------|------|
-| README.md | 21 KB | 完整项目说明 |
-| deep_diagnosis.py | ~200 行 | 诊断脚本 |
-| hgb_focused_solution.py | ~150 行 | 最终方案 |
-| best_model_fold_*.pth | 3.8 MB | 5折模型 |
-| data/submission.csv | 6.8 KB | 最终提交 |
-
-### 依赖项
-```
-pandas, numpy, scikit-learn, torch, torchvision, torchaudio
-```
-
----
-
-## 项目统计 (STATISTICS)
-
-- **总文件数**: 30+ Python 脚本 + 文档
-- **代码总行数**: 5000+ 行
-- **优化迭代**: 20+ 轮
-- **测试策略**: 15+ 种
-- **F1 改进**: 180-200%
-- **Class 3 改进**: 11倍
-
----
-
-## 联系方式与支持 (SUPPORT)
-
-如有问题，按优先级查阅:
-
-1. **[QUICK_REFERENCE.md](QUICK_REFERENCE.md)** - 快速查询
-2. **[NEXT_STEPS_中文.md](NEXT_STEPS_中文.md)** - 故障排查
-3. **[deep_diagnosis.py](deep_diagnosis.py)** - 性能诊断
-4. **[README.md](README.md)** - 详细说明
-
----
-
-**项目完成确认**: ✅  
-**提交文件就绪**: ✅ `data/submission.csv`  
-**文档完整**: ✅ 4份主要文档 + 本索引  
-**所有脚本可用**: ✅ 30+ 个脚本  
-
----
-
-*本索引文件生成于 2025年12月2日*  
-*用于快速导航和文件查询*
+已根据你的确认完成分组。若要继续（例如删除备份、清理 `experiments/`、或在 `docs/` 中整理文档），请告诉我下一步。
